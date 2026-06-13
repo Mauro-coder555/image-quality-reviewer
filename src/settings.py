@@ -34,3 +34,19 @@ KNOWN_IMAGE_EXTENSIONS = ALLOWED_EXTENSIONS | {
     ".heif",
     ".avif",
 }
+
+# Visual artifact detection settings.
+# These are heuristics, not forensic rules.
+# They help detect images that can be opened but may look damaged.
+MAX_SOLID_COLOR_RATIO = 0.55
+MAX_LOW_VARIANCE_BLOCK_RATIO = 0.45
+LOW_VARIANCE_BLOCK_THRESHOLD = 18.0
+
+NEAR_BLACK_THRESHOLD = 12
+NEAR_WHITE_THRESHOLD = 243
+MAX_GRAY_CHANNEL_DIFFERENCE = 8
+
+MIN_BYTES_PER_MEGA_PIXEL = 25_000
+
+ARTIFACT_ANALYSIS_MAX_SIZE = 600
+ARTIFACT_GRID_SIZE = 8
