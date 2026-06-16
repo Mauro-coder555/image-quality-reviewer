@@ -10,15 +10,13 @@ TRASH_DIR = BASE_DIR / "trash"
 MIN_WIDTH = 800
 MIN_HEIGHT = 600
 
-# Blur is treated as a warning, not as a critical problem.
-# This avoids rejecting people photos with intentional background blur.
+# Blur is informational only. It must not make an image unusable.
 BLUR_THRESHOLD = 120.0
 
 INCLUDE_SUBFOLDERS = True
 MOVE_TO_TRASH_BY_DEFAULT = True
 
-# If False, the UI only lists critical images.
-# If True, the UI also lists images with warnings such as low resolution or blur.
+# Keep False to show only images that are very likely unusable.
 SHOW_WARNINGS_IN_UI = False
 
 ALLOWED_EXTENSIONS = {
@@ -50,57 +48,48 @@ EXTENSION_TO_PIL_FORMATS = {
     ".tiff": {"TIFF"},
 }
 
-# Analysis size.
-# Images are sampled for speed. Originals are never modified.
+# OpenCV-based corruption detection.
+# The goal is to flag only images that are truly broken or unusable.
 ARTIFACT_ANALYSIS_MAX_SIZE = 720
 
-# Random pixel / RGB glitch detection.
-RANDOM_NOISE_COLOR_JUMP_THRESHOLD = 150
-RANDOM_NOISE_MIN_COLOR_JUMP_RATIO = 0.34
-RANDOM_NOISE_MIN_SATURATED_RATIO = 0.30
-RANDOM_NOISE_MIN_BRIGHTNESS = 35
-RANDOM_NOISE_MIN_SATURATION = 120
+# Score needed to mark visual corruption as critical.
+# Individual weak signals become warnings only.
+UNUSABLE_SCORE_THRESHOLD = 3.0
 
-# Corrupted block detection.
-GLITCH_GRID_SIZE = 16
-DAMAGED_BLOCK_MIN_RATIO = 0.10
-DAMAGED_EDGE_BLOCK_MIN_RATIO = 0.24
-BLOCK_MIN_SATURATED_RATIO = 0.58
-BLOCK_MIN_COLOR_JUMP_RATIO = 0.22
-BLOCK_MIN_DOMINANT_RATIO = 0.82
-BLOCK_MAX_FLAT_VARIANCE = 14.0
+# Extreme RGB noise.
+EXTREME_NOISE_SCORE = 4.0
+EXTREME_NOISE_MIN_SATURATED_RATIO = 0.34
+EXTREME_NOISE_MIN_COLOR_JUMP_RATIO = 0.28
+EXTREME_NOISE_MIN_SATURATION = 125
+EXTREME_NOISE_MIN_BRIGHTNESS = 40
+EXTREME_NOISE_COLOR_JUMP_THRESHOLD = 145
 
-# Stripe / bar detection.
-# This is stricter than the previous band detector to avoid false positives
-# on portraits, studio backgrounds, logos, walls, or natural lighting.
-STRIPE_SCAN_COUNT = 90
-STRIPE_MIN_DOMINANT_COLOR_RATIO = 0.72
-STRIPE_MAX_VARIANCE = 22.0
-STRIPE_MIN_MEAN_DIFFERENCE = 70
-STRIPE_MIN_SATURATED_RATIO = 0.36
-STRIPE_MIN_TOTAL_RATIO = 0.035
-STRIPE_MIN_GROUPS = 1
-STRIPE_EDGE_ZONE_RATIO = 0.22
+# Large damaged panel + seam.
+PANEL_DAMAGE_SCORE = 2.0
+PANEL_SCAN_RATIO = 0.28
+PANEL_MIN_CONTEXT_DIFFERENCE = 48.0
+PANEL_MIN_SATURATED_RATIO = 0.18
+PANEL_MIN_SEAM_DIFFERENCE = 42.0
 
-# Broken colored panel detection.
-# Useful for images with vertical or horizontal color-tinted damaged regions.
-PANEL_SCAN_COUNT = 64
-PANEL_MIN_WIDTH_RATIO = 0.14
-PANEL_MIN_HEIGHT_RATIO = 0.14
-PANEL_MIN_SATURATED_RATIO = 0.32
-PANEL_MIN_CHANNEL_SPREAD = 45
-PANEL_MIN_MEAN_DIFFERENCE = 55
-PANEL_EDGE_ZONE_RATIO = 0.30
+# Global seam / split image.
+GLOBAL_SEAM_SCORE = 1.5
+GLOBAL_SEAM_MIN_DIFFERENCE = 48.0
+GLOBAL_SEAM_OUTLIER_MULTIPLIER = 2.8
+GLOBAL_SEAM_EDGE_IGNORE_RATIO = 0.08
 
-# Flat edge replacement detection.
-# Catches large solid-colored replacement areas on edges, but avoids flagging
-# normal black backgrounds or letterboxing as critical.
-EDGE_BAND_RATIO = 0.18
-EDGE_BAND_MAX_VARIANCE = 18.0
-EDGE_BAND_MIN_DOMINANT_RATIO = 0.78
-EDGE_BAND_MIN_SATURATED_RATIO = 0.30
-EDGE_BAND_MIN_MEAN_DIFFERENCE = 55
+# Solid replacement edge.
+SOLID_EDGE_REPLACEMENT_SCORE = 3.0
+SOLID_EDGE_RATIO = 0.24
+SOLID_EDGE_MIN_DOMINANT_RATIO = 0.84
+SOLID_EDGE_MAX_GRAY_VARIANCE = 16.0
+SOLID_EDGE_MIN_CONTEXT_DIFFERENCE = 58.0
 
-# File size warning.
-# This remains a warning because highly compressed images can be valid.
+# Damaged block mosaic.
+DAMAGED_BLOCKS_SCORE = 2.0
+DAMAGED_BLOCK_GRID_SIZE = 12
+DAMAGED_BLOCK_MIN_RATIO = 0.16
+DAMAGED_BLOCK_MIN_SATURATED_RATIO = 0.48
+DAMAGED_BLOCK_MIN_COLOR_JUMP_RATIO = 0.22
+
+# Warning-only checks.
 MIN_BYTES_PER_MEGA_PIXEL = 18_000

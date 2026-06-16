@@ -29,8 +29,8 @@ class ImageQualityReviewerApp:
         self.is_scanning = False
 
         self.total_analyzed = 0
-        self.critical_count = 0
-        self.warning_count = 0
+        self.unusable_count = 0
+        self.review_count = 0
 
         self.folder_label_var = tk.StringVar(value="No folder selected")
         self.status_var = tk.StringVar(value="Ready")
@@ -49,32 +49,16 @@ class ImageQualityReviewerApp:
         top_frame = ttk.Frame(main_frame)
         top_frame.pack(fill=tk.X)
 
-        self.select_button = ttk.Button(
-            top_frame,
-            text="Select folder",
-            command=self.select_folder,
-        )
+        self.select_button = ttk.Button(top_frame, text="Select folder", command=self.select_folder)
         self.select_button.pack(side=tk.LEFT)
 
-        self.scan_button = ttk.Button(
-            top_frame,
-            text="Scan images",
-            command=self.scan_selected_folder,
-        )
+        self.scan_button = ttk.Button(top_frame, text="Scan images", command=self.scan_selected_folder)
         self.scan_button.pack(side=tk.LEFT, padx=(8, 0))
 
-        self.report_button = ttk.Button(
-            top_frame,
-            text="Generate report",
-            command=self.generate_report,
-        )
+        self.report_button = ttk.Button(top_frame, text="Generate report", command=self.generate_report)
         self.report_button.pack(side=tk.LEFT, padx=(8, 0))
 
-        folder_label = ttk.Label(
-            top_frame,
-            textvariable=self.folder_label_var,
-            anchor=tk.W,
-        )
+        folder_label = ttk.Label(top_frame, textvariable=self.folder_label_var, anchor=tk.W)
         folder_label.pack(side=tk.LEFT, padx=(12, 0), fill=tk.X, expand=True)
 
         content_frame = ttk.Frame(main_frame)
@@ -83,7 +67,7 @@ class ImageQualityReviewerApp:
         left_frame = ttk.Frame(content_frame)
         left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        columns = ("severity", "status", "marked", "dimensions", "blur", "reason")
+        columns = ("issue_type", "marked", "dimensions", "blur", "reason")
         self.tree = ttk.Treeview(
             left_frame,
             columns=columns,
@@ -92,26 +76,23 @@ class ImageQualityReviewerApp:
         )
 
         self.tree.heading("#0", text="File")
-        self.tree.heading("severity", text="Severity")
-        self.tree.heading("status", text="Status")
+        self.tree.heading("issue_type", text="Issue")
         self.tree.heading("marked", text="Marked")
         self.tree.heading("dimensions", text="Dimensions")
         self.tree.heading("blur", text="Blur")
         self.tree.heading("reason", text="Reason")
 
-        self.tree.column("#0", width=250)
-        self.tree.column("severity", width=90, anchor=tk.CENTER)
-        self.tree.column("status", width=100, anchor=tk.CENTER)
+        self.tree.column("#0", width=260)
+        self.tree.column("issue_type", width=90, anchor=tk.CENTER)
         self.tree.column("marked", width=80, anchor=tk.CENTER)
         self.tree.column("dimensions", width=100, anchor=tk.CENTER)
         self.tree.column("blur", width=80, anchor=tk.CENTER)
-        self.tree.column("reason", width=430)
+        self.tree.column("reason", width=520)
 
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         scrollbar = ttk.Scrollbar(left_frame, orient=tk.VERTICAL, command=self.tree.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
         self.tree.configure(yscrollcommand=scrollbar.set)
         self.tree.bind("<<TreeviewSelect>>", self.on_tree_selection)
 
@@ -185,11 +166,7 @@ class ImageQualityReviewerApp:
         )
         self.move_marked_button.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 0))
 
-        status_label = ttk.Label(
-            main_frame,
-            textvariable=self.status_var,
-            anchor=tk.W,
-        )
+        status_label = ttk.Label(main_frame, textvariable=self.status_var, anchor=tk.W)
         status_label.pack(fill=tk.X, pady=(8, 0))
 
     def bind_keyboard_shortcuts(self) -> None:
@@ -284,10 +261,10 @@ class ImageQualityReviewerApp:
         self.total_analyzed += 1
 
         if result.critical_reasons:
-            self.critical_count += 1
+            self.unusable_count += 1
 
         if result.warning_reasons:
-            self.warning_count += 1
+            self.review_count += 1
 
         if self.should_show_result(result):
             self.results.append(result)
@@ -303,8 +280,8 @@ class ImageQualityReviewerApp:
         if self.results:
             self.select_tree_item_by_index(0)
         else:
-            self.details_var.set("No critical damaged images were found.")
-            self.preview_label.configure(image="", text="No critical damaged images found")
+            self.details_var.set("No unusable images were found.")
+            self.preview_label.configure(image="", text="No unusable images found")
 
     def finish_scan_with_error(self, error_message: str) -> None:
         self.set_scanning_state(False)
@@ -312,12 +289,12 @@ class ImageQualityReviewerApp:
         self.status_var.set("Scan failed.")
 
     def update_scan_status(self, final: bool = False) -> None:
-        mode_text = "critical only" if not SHOW_WARNINGS_IN_UI else "critical and warning"
+        mode_text = "unusable only" if not SHOW_WARNINGS_IN_UI else "unusable and review"
         prefix = "Scan completed." if final else "Scanning..."
 
         self.status_var.set(
             f"{prefix} Files analyzed: {self.total_analyzed}. "
-            f"Critical: {self.critical_count}. Warnings: {self.warning_count}. "
+            f"Unusable: {self.unusable_count}. Review: {self.review_count}. "
             f"Showing: {mode_text}."
         )
 
@@ -332,8 +309,8 @@ class ImageQualityReviewerApp:
 
     def reset_scan_counters(self) -> None:
         self.total_analyzed = 0
-        self.critical_count = 0
-        self.warning_count = 0
+        self.unusable_count = 0
+        self.review_count = 0
 
         while not self.scan_queue.empty():
             try:
@@ -343,7 +320,6 @@ class ImageQualityReviewerApp:
 
     def set_scanning_state(self, is_scanning: bool) -> None:
         self.is_scanning = is_scanning
-
         state = tk.DISABLED if is_scanning else tk.NORMAL
 
         self.select_button.configure(state=state)
@@ -375,8 +351,7 @@ class ImageQualityReviewerApp:
             iid=str(index),
             text=result.path.name,
             values=(
-                result.severity,
-                result.status,
+                result.issue_type,
                 "Yes" if result.marked_for_deletion else "No",
                 self.format_dimensions(result),
                 self.format_blur_score(result),
@@ -403,16 +378,10 @@ class ImageQualityReviewerApp:
 
         if preview_image is None:
             self.current_preview_image = None
-            self.preview_label.configure(
-                image="",
-                text="Preview not available",
-            )
+            self.preview_label.configure(image="", text="Preview not available")
         else:
             self.current_preview_image = preview_image
-            self.preview_label.configure(
-                image=self.current_preview_image,
-                text="",
-            )
+            self.preview_label.configure(image=self.current_preview_image, text="")
 
         self.details_var.set(self.build_details_text(result))
 
@@ -515,7 +484,6 @@ class ImageQualityReviewerApp:
                 move_file_to_trash(result.path)
                 result.status = "moved to trash"
                 moved_count += 1
-
             except Exception as error:
                 result.status = "move failed"
                 result.critical_reasons.append(f"Move to trash failed: {error}")
@@ -573,16 +541,15 @@ class ImageQualityReviewerApp:
         details = [
             f"File: {result.path.name}",
             f"Path: {result.path}",
-            f"Severity: {result.severity}",
-            f"Status: {result.status}",
+            f"Issue: {result.issue_type}",
             f"Dimensions: {self.format_dimensions(result)}",
             f"Blur score: {self.format_blur_score(result)}",
             f"Marked for deletion: {'Yes' if result.marked_for_deletion else 'No'}",
             "",
-            "Critical reasons:",
+            "Unusable reasons:",
             self.format_reason_list(result.critical_reasons),
             "",
-            "Warnings:",
+            "Review notes:",
             self.format_reason_list(result.warning_reasons),
             "",
             "Info:",
