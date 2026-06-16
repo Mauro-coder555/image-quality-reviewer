@@ -16,37 +16,39 @@ def generate_markdown_report(
     report_path = reports_dir / f"image_quality_report_{timestamp}.md"
 
     total_files = len(results)
-    problematic_files = [result for result in results if result.is_problematic]
+    critical_files = [result for result in results if result.critical_reasons]
+    warning_files = [result for result in results if result.warning_reasons and not result.critical_reasons]
 
     lines = [
         "# Image Quality Review Report",
         "",
         f"- Scan date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         f"- Selected folder: `{selected_folder}`",
-        f"- Total image files scanned: {total_files}",
-        f"- Problematic files found: {len(problematic_files)}",
+        f"- Listed files in report: {total_files}",
+        f"- Critical files: {len(critical_files)}",
+        f"- Warning-only files: {len(warning_files)}",
         "",
-        "## Problematic images",
+        "## Listed images",
         "",
     ]
 
-    if not problematic_files:
-        lines.append("No problematic images were found.")
+    if not results:
+        lines.append("No listed images were found.")
     else:
         lines.extend(
             [
-                "| File | Dimensions | Blur score | Status | Marked for deletion | Reasons |",
-                "| --- | --- | --- | --- | --- | --- |",
+                "| File | Severity | Dimensions | Blur score | Status | Marked for deletion | Reasons |",
+                "| --- | --- | --- | --- | --- | --- | --- |",
             ]
         )
 
-        for result in problematic_files:
+        for result in results:
             dimensions = format_dimensions(result)
             blur_score = format_blur_score(result)
-            reasons = "; ".join(result.reasons)
+            reasons = format_reasons(result)
 
             lines.append(
-                f"| `{result.path}` | {dimensions} | {blur_score} | "
+                f"| `{result.path}` | {result.severity} | {dimensions} | {blur_score} | "
                 f"{result.status} | {result.marked_for_deletion} | {reasons} |"
             )
 
@@ -56,6 +58,8 @@ def generate_markdown_report(
             "## Notes",
             "",
             "This report is generated locally.",
+            "Critical means the image may be corrupted, incomplete, glitched, or technically damaged.",
+            "Warnings such as low resolution or blur do not necessarily mean the image is unusable.",
             "The tool does not upload images, does not modify original images, and does not replace human review.",
             "",
         ]
@@ -78,3 +82,21 @@ def format_blur_score(result: ImageAnalysisResult) -> str:
         return "not available"
 
     return f"{result.blur_score:.2f}"
+
+
+def format_reasons(result: ImageAnalysisResult) -> str:
+    sections: list[str] = []
+
+    if result.critical_reasons:
+        sections.append("Critical: " + "; ".join(result.critical_reasons))
+
+    if result.warning_reasons:
+        sections.append("Warnings: " + "; ".join(result.warning_reasons))
+
+    if result.info_reasons:
+        sections.append("Info: " + "; ".join(result.info_reasons))
+
+    if not sections:
+        return "No issues"
+
+    return " / ".join(sections)
