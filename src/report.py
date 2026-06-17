@@ -16,8 +16,13 @@ def generate_markdown_report(
     report_path = reports_dir / f"image_quality_report_{timestamp}.md"
 
     total_files = len(results)
-    critical_files = [result for result in results if result.critical_reasons]
-    warning_files = [result for result in results if result.warning_reasons and not result.critical_reasons]
+    broken_files = [result for result in results if result.critical_reasons]
+    suspect_files = [result for result in results if result.suspect_reasons]
+    warning_files = [
+        result
+        for result in results
+        if result.warning_reasons and not result.critical_reasons and not result.suspect_reasons
+    ]
 
     lines = [
         "# Image Quality Review Report",
@@ -25,8 +30,9 @@ def generate_markdown_report(
         f"- Scan date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         f"- Selected folder: `{selected_folder}`",
         f"- Listed files in report: {total_files}",
-        f"- Critical files: {len(critical_files)}",
-        f"- Warning-only files: {len(warning_files)}",
+        f"- Broken files: {len(broken_files)}",
+        f"- Suspect files: {len(suspect_files)}",
+        f"- Review-only files: {len(warning_files)}",
         "",
         "## Listed images",
         "",
@@ -37,8 +43,8 @@ def generate_markdown_report(
     else:
         lines.extend(
             [
-                "| File | Severity | Dimensions | Blur score | Status | Marked for deletion | Reasons |",
-                "| --- | --- | --- | --- | --- | --- | --- |",
+                "| File | Issue | Score | Dimensions | Blur score | Status | Marked for deletion | Reasons |",
+                "| --- | --- | --- | --- | --- | --- | --- | --- |",
             ]
         )
 
@@ -48,8 +54,8 @@ def generate_markdown_report(
             reasons = format_reasons(result)
 
             lines.append(
-                f"| `{result.path}` | {result.severity} | {dimensions} | {blur_score} | "
-                f"{result.status} | {result.marked_for_deletion} | {reasons} |"
+                f"| `{result.path}` | {result.issue_type} | {result.score} | {dimensions} | "
+                f"{blur_score} | {result.status} | {result.marked_for_deletion} | {reasons} |"
             )
 
     lines.extend(
@@ -58,8 +64,10 @@ def generate_markdown_report(
             "## Notes",
             "",
             "This report is generated locally.",
-            "Critical means the image may be corrupted, incomplete, glitched, or technically damaged.",
-            "Warnings such as low resolution or blur do not necessarily mean the image is unusable.",
+            "Broken means there is strong evidence that the file is damaged or cannot be decoded.",
+            "Suspect means the image has combined signals that may indicate corruption or incomplete download.",
+            "Review-only warnings are soft signals and should not be treated as automatic rejection reasons.",
+            "Flat backgrounds, banners, walls, packaging, sky, margins, blur, and low texture are not enough to reject an image by themselves.",
             "The tool does not upload images, does not modify original images, and does not replace human review.",
             "",
         ]
@@ -88,10 +96,13 @@ def format_reasons(result: ImageAnalysisResult) -> str:
     sections: list[str] = []
 
     if result.critical_reasons:
-        sections.append("Critical: " + "; ".join(result.critical_reasons))
+        sections.append("Broken: " + "; ".join(result.critical_reasons))
+
+    if result.suspect_reasons:
+        sections.append("Suspect: " + "; ".join(result.suspect_reasons))
 
     if result.warning_reasons:
-        sections.append("Warnings: " + "; ".join(result.warning_reasons))
+        sections.append("Review: " + "; ".join(result.warning_reasons))
 
     if result.info_reasons:
         sections.append("Info: " + "; ".join(result.info_reasons))

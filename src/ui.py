@@ -29,7 +29,8 @@ class ImageQualityReviewerApp:
         self.is_scanning = False
 
         self.total_analyzed = 0
-        self.unusable_count = 0
+        self.broken_count = 0
+        self.suspect_count = 0
         self.review_count = 0
 
         self.folder_label_var = tk.StringVar(value="No folder selected")
@@ -67,7 +68,7 @@ class ImageQualityReviewerApp:
         left_frame = ttk.Frame(content_frame)
         left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        columns = ("issue_type", "marked", "dimensions", "blur", "reason")
+        columns = ("issue_type", "score", "marked", "dimensions", "blur", "reason")
         self.tree = ttk.Treeview(
             left_frame,
             columns=columns,
@@ -77,13 +78,15 @@ class ImageQualityReviewerApp:
 
         self.tree.heading("#0", text="File")
         self.tree.heading("issue_type", text="Issue")
+        self.tree.heading("score", text="Score")
         self.tree.heading("marked", text="Marked")
         self.tree.heading("dimensions", text="Dimensions")
         self.tree.heading("blur", text="Blur")
         self.tree.heading("reason", text="Reason")
 
-        self.tree.column("#0", width=260)
+        self.tree.column("#0", width=240)
         self.tree.column("issue_type", width=90, anchor=tk.CENTER)
+        self.tree.column("score", width=70, anchor=tk.CENTER)
         self.tree.column("marked", width=80, anchor=tk.CENTER)
         self.tree.column("dimensions", width=100, anchor=tk.CENTER)
         self.tree.column("blur", width=80, anchor=tk.CENTER)
@@ -118,28 +121,16 @@ class ImageQualityReviewerApp:
         navigation_frame = ttk.Frame(right_frame)
         navigation_frame.pack(fill=tk.X, pady=(10, 0))
 
-        self.previous_button = ttk.Button(
-            navigation_frame,
-            text="Previous",
-            command=self.show_previous_image,
-        )
+        self.previous_button = ttk.Button(navigation_frame, text="Previous", command=self.show_previous_image)
         self.previous_button.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-        self.next_button = ttk.Button(
-            navigation_frame,
-            text="Next",
-            command=self.show_next_image,
-        )
+        self.next_button = ttk.Button(navigation_frame, text="Next", command=self.show_next_image)
         self.next_button.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 0))
 
         actions_frame = ttk.Frame(right_frame)
         actions_frame.pack(fill=tk.X, pady=(10, 0))
 
-        self.mark_button = ttk.Button(
-            actions_frame,
-            text="Mark / unmark",
-            command=self.toggle_mark_current_image,
-        )
+        self.mark_button = ttk.Button(actions_frame, text="Mark / unmark", command=self.toggle_mark_current_image)
         self.mark_button.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         self.move_current_button = ttk.Button(
@@ -261,7 +252,10 @@ class ImageQualityReviewerApp:
         self.total_analyzed += 1
 
         if result.critical_reasons:
-            self.unusable_count += 1
+            self.broken_count += 1
+
+        if result.suspect_reasons:
+            self.suspect_count += 1
 
         if result.warning_reasons:
             self.review_count += 1
@@ -280,8 +274,8 @@ class ImageQualityReviewerApp:
         if self.results:
             self.select_tree_item_by_index(0)
         else:
-            self.details_var.set("No unusable images were found.")
-            self.preview_label.configure(image="", text="No unusable images found")
+            self.details_var.set("No broken or suspect images were found.")
+            self.preview_label.configure(image="", text="No broken or suspect images found")
 
     def finish_scan_with_error(self, error_message: str) -> None:
         self.set_scanning_state(False)
@@ -289,17 +283,20 @@ class ImageQualityReviewerApp:
         self.status_var.set("Scan failed.")
 
     def update_scan_status(self, final: bool = False) -> None:
-        mode_text = "unusable only" if not SHOW_WARNINGS_IN_UI else "unusable and review"
+        mode_text = "broken and suspect" if not SHOW_WARNINGS_IN_UI else "broken, suspect and review"
         prefix = "Scan completed." if final else "Scanning..."
 
         self.status_var.set(
             f"{prefix} Files analyzed: {self.total_analyzed}. "
-            f"Unusable: {self.unusable_count}. Review: {self.review_count}. "
-            f"Showing: {mode_text}."
+            f"Broken: {self.broken_count}. Suspect: {self.suspect_count}. "
+            f"Review: {self.review_count}. Showing: {mode_text}."
         )
 
     def should_show_result(self, result: ImageAnalysisResult) -> bool:
         if result.critical_reasons:
+            return True
+
+        if result.suspect_reasons:
             return True
 
         if SHOW_WARNINGS_IN_UI and result.warning_reasons:
@@ -309,7 +306,8 @@ class ImageQualityReviewerApp:
 
     def reset_scan_counters(self) -> None:
         self.total_analyzed = 0
-        self.unusable_count = 0
+        self.broken_count = 0
+        self.suspect_count = 0
         self.review_count = 0
 
         while not self.scan_queue.empty():
@@ -352,6 +350,7 @@ class ImageQualityReviewerApp:
             text=result.path.name,
             values=(
                 result.issue_type,
+                result.score,
                 "Yes" if result.marked_for_deletion else "No",
                 self.format_dimensions(result),
                 self.format_blur_score(result),
@@ -542,12 +541,17 @@ class ImageQualityReviewerApp:
             f"File: {result.path.name}",
             f"Path: {result.path}",
             f"Issue: {result.issue_type}",
+            f"Status: {result.status}",
+            f"Score: {result.score}",
             f"Dimensions: {self.format_dimensions(result)}",
             f"Blur score: {self.format_blur_score(result)}",
             f"Marked for deletion: {'Yes' if result.marked_for_deletion else 'No'}",
             "",
-            "Unusable reasons:",
+            "Broken reasons:",
             self.format_reason_list(result.critical_reasons),
+            "",
+            "Suspect reasons:",
+            self.format_reason_list(result.suspect_reasons),
             "",
             "Review notes:",
             self.format_reason_list(result.warning_reasons),
@@ -562,6 +566,9 @@ class ImageQualityReviewerApp:
     def format_reason_summary(result: ImageAnalysisResult) -> str:
         if result.critical_reasons:
             return "; ".join(result.critical_reasons)
+
+        if result.suspect_reasons:
+            return "; ".join(result.suspect_reasons)
 
         if result.warning_reasons:
             return "; ".join(result.warning_reasons)
