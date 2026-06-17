@@ -1,132 +1,72 @@
-# image-quality-reviewer
+# Image Quality Reviewer
 
-![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![Tkinter](https://img.shields.io/badge/UI-Tkinter-FFB000?style=for-the-badge)
-![Pillow](https://img.shields.io/badge/Images-Pillow-2CA02C?style=for-the-badge)
-![Windows](https://img.shields.io/badge/Windows-ready-0078D6?style=for-the-badge&logo=windows&logoColor=white)
-![Local](https://img.shields.io/badge/Local%20Only-No%20APIs-6A5ACD?style=for-the-badge)
+Una aplicación de escritorio local para revisar carpetas de imágenes y detectar archivos posiblemente rotos o inusables.
 
-Aplicación de escritorio local para revisar carpetas con imágenes y detectar posibles problemas de calidad.
+El proyecto está pensado especialmente para trabajar con carpetas grandes de imágenes, como datasets de personas, donde puede haber archivos corruptos, incompletos o visualmente dañados.
 
-El objetivo del proyecto es ayudar a limpiar, revisar y validar grandes cantidades de imágenes de forma visual y segura, especialmente cuando vienen de descargas masivas, crawlers de imágenes o procesos automáticos de creación de datasets.
+La app permite escanear una carpeta, revisar los casos detectados, previsualizar cada imagen y mover archivos sospechosos a una carpeta local `trash/` con confirmación.
 
 ---
 
-## Índice
+## Objetivo
 
-- [Qué hace](#qué-hace)
-- [Para qué sirve](#para-qué-sirve)
-- [Instalación](#instalación)
-- [Uso](#uso)
-- [Criterios de detección](#criterios-de-detección)
-- [Seguridad](#seguridad)
-- [Estructura del proyecto](#estructura-del-proyecto)
-- [Futuras mejoras](#futuras-mejoras)
+El objetivo principal no es evaluar si una foto es “linda”, “nítida” o “perfecta”.
 
----
+El objetivo es ayudar a encontrar imágenes que probablemente no sirvan porque están realmente dañadas, por ejemplo:
 
-## Qué hace
-
-`image-quality-reviewer` permite seleccionar una carpeta local y analizar imágenes de forma recursiva para detectar posibles problemas.
-
-Actualmente puede detectar:
-
-- imágenes corruptas o que no se pueden abrir
-- archivos incompletos o con error de lectura
-- imágenes de baja resolución
-- imágenes muy pequeñas
-- imágenes borrosas
-- posibles artefactos visuales, manchas o zonas anómalas
-- formatos no soportados
-- dimensiones inválidas o inesperadas
-
-La app muestra una lista de imágenes problemáticas, permite previsualizarlas, marcarlas y moverlas a una carpeta local `trash/`.
+* archivos que no se pueden abrir;
+* imágenes incompletas o truncadas;
+* archivos con estructura inválida;
+* imágenes con ruido RGB extremo;
+* posibles casos de corrupción visual fuerte.
 
 ---
 
-## Para qué sirve
+## Qué NO intenta hacer
 
-Es útil para revisar imágenes antes de usarlas en:
+La herramienta intenta evitar falsos positivos en imágenes válidas.
 
-- datasets de machine learning
-- crawlers de imágenes
-- scrapers o descargas masivas
-- herramientas internas de control de calidad
-- limpieza de carpetas con muchas imágenes
-- revisión visual rápida antes de procesar archivos
+Por eso, en el modo actual, no debería marcar una imagen como inusable solo por:
 
-No reemplaza una revisión humana ni una herramienta profesional de gestión de assets, pero ayuda a detectar problemas comunes de forma rápida.
+* baja resolución;
+* fondo desenfocado;
+* blur leve o moderado;
+* carteles en el fondo;
+* telas, paredes, sombras o luces;
+* objetos detrás de una persona;
+* compresión o calidad visual baja.
 
----
-
-## Instalación
-
-Crear y activar un entorno virtual:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-Instalar dependencias:
-
-```powershell
-pip install -r requirements.txt
-```
-
-Ejecutar la app:
-
-```powershell
-python main.py
-```
+Estos casos pueden ser imperfectos, pero no necesariamente hacen que una imagen sea inválida.
 
 ---
 
-## Uso
+## Estado actual del proyecto
 
-1. Abrir la aplicación.
-2. Seleccionar una carpeta local.
-3. Ejecutar el escaneo.
-4. Revisar la lista de imágenes problemáticas.
-5. Previsualizar cada imagen desde la app.
-6. Marcar imágenes para descartar.
-7. Mover imágenes seleccionadas o marcadas a `trash/`.
-8. Generar un reporte local en `reports/`.
+El proyecto está en una etapa experimental.
 
-La navegación también permite avanzar y retroceder entre imágenes desde la interfaz.
+Ya cuenta con:
 
----
+* interfaz gráfica local con Tkinter;
+* análisis de imágenes con Pillow;
+* detección visual experimental con OpenCV y NumPy;
+* escaneo de carpetas y subcarpetas;
+* previsualización de imágenes detectadas;
+* marcado manual de archivos;
+* movimiento seguro a carpeta `trash/`;
+* generación de reportes en Markdown;
+* análisis en segundo plano para evitar que la ventana se congele.
 
-## Criterios de detección
-
-Los criterios principales se configuran en `src/settings.py`:
-
-```python
-MIN_WIDTH = 800
-MIN_HEIGHT = 600
-BLUR_THRESHOLD = 120.0
-INCLUDE_SUBFOLDERS = True
-MOVE_TO_TRASH_BY_DEFAULT = True
-```
-
-También existen criterios simples para detectar posibles artefactos visuales, como zonas demasiado uniformes, áreas negras/blancas/grises muy grandes o archivos sospechosamente pequeños para su resolución.
-
-Estos criterios son heurísticos. Pueden ajustarse según el tipo de imágenes que se estén revisando.
+Todavía se está ajustando la detección visual para reducir falsos positivos sin dejar pasar imágenes claramente rotas.
 
 ---
 
-## Seguridad
+## Tecnologías usadas
 
-La herramienta está pensada para uso local.
-
-- No sube imágenes a internet.
-- No usa APIs externas.
-- No modifica imágenes originales.
-- No sobrescribe archivos originales.
-- No borra archivos sin confirmación explícita.
-- Prioriza mover archivos a `trash/` antes que eliminarlos definitivamente.
-
-Esto permite revisar y descartar imágenes con menor riesgo de pérdida accidental.
+* Python
+* Tkinter
+* Pillow
+* OpenCV
+* NumPy
 
 ---
 
@@ -147,6 +87,7 @@ image-quality-reviewer/
     ├── __init__.py
     ├── scanner.py
     ├── image_analysis.py
+    ├── corruption_detection.py
     ├── image_preview.py
     ├── file_actions.py
     ├── report.py
@@ -156,19 +97,192 @@ image-quality-reviewer/
 
 ---
 
-## Futuras mejoras
+## Instalación
 
-- Empaquetar como `.exe` con PyInstaller.
-- Agregar configuración editable desde la interfaz.
-- Mejorar la detección de blur con OpenCV.
-- Agregar soporte opcional para más formatos.
-- Guardar historial de análisis.
-- Exportar reportes en HTML.
-- Restaurar archivos movidos a `trash/` desde la app.
-- Integrarlo con crawlers de imágenes para validar descargas automáticamente.
+Crear y activar un entorno virtual:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+Si PowerShell bloquea la activación del entorno:
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
+.\.venv\Scripts\Activate.ps1
+```
+
+Instalar dependencias:
+
+```powershell
+pip install -r requirements.txt
+```
 
 ---
 
-## Estado del proyecto
+## Dependencias
 
-MVP funcional para revisión local de imágenes.
+El archivo `requirements.txt` actual usa:
+
+```txt
+Pillow==10.4.0
+numpy>=1.26,<3
+opencv-python>=4.10,<5
+```
+
+---
+
+## Uso
+
+Ejecutar la aplicación:
+
+```powershell
+python main.py
+```
+
+Luego:
+
+1. Seleccionar una carpeta de imágenes.
+2. Ejecutar el escaneo.
+3. Revisar los archivos detectados.
+4. Previsualizar cada imagen.
+5. Marcar o desmarcar imágenes manualmente.
+6. Mover archivos seleccionados o marcados a `trash/`.
+7. Generar un reporte si hace falta.
+
+---
+
+## Cómo clasifica los resultados
+
+La herramienta separa los resultados en distintos niveles internos:
+
+### Unusable
+
+Imágenes que probablemente están rotas o no son utilizables.
+
+Ejemplos:
+
+* archivo que no abre;
+* archivo vacío;
+* imagen incompleta;
+* estructura inválida;
+* error de lectura;
+* corrupción visual extrema.
+
+### Review
+
+Casos visualmente sospechosos, pero no lo suficientemente seguros como para descartarlos automáticamente.
+
+Ejemplos:
+
+* posible panel dañado;
+* posible corte visual;
+* posible patrón de ruido;
+* señales ambiguas que podrían venir del fondo.
+
+Por defecto, estos casos no se muestran si `SHOW_WARNINGS_IN_UI` está en `False`.
+
+### Info
+
+Información útil, pero no bloqueante.
+
+Ejemplos:
+
+* baja resolución;
+* posible blur;
+* tamaño de archivo sospechosamente bajo.
+
+---
+
+## Configuración importante
+
+En `src/settings.py` se puede controlar el comportamiento de la app.
+
+Para mostrar solo imágenes clasificadas como inusables:
+
+```python
+SHOW_WARNINGS_IN_UI = False
+```
+
+Para mostrar también casos que requieren revisión manual:
+
+```python
+SHOW_WARNINGS_IN_UI = True
+```
+
+Para datasets de personas, se recomienda mantenerlo en:
+
+```python
+SHOW_WARNINGS_IN_UI = False
+```
+
+Esto ayuda a evitar que imágenes válidas aparezcan como problemas solo por tener fondos complejos, blur o elementos detrás.
+
+---
+
+## Seguridad
+
+La aplicación no borra archivos de forma permanente automáticamente.
+
+Cuando se decide mover una imagen, el archivo se envía a la carpeta local:
+
+```text
+trash/
+```
+
+Antes de mover archivos, la app pide confirmación.
+
+---
+
+## Reportes
+
+Los reportes se generan en formato Markdown dentro de:
+
+```text
+reports/
+```
+
+Incluyen información como:
+
+* carpeta analizada;
+* cantidad de archivos listados;
+* dimensiones;
+* blur score;
+* motivos detectados;
+* estado de cada imagen.
+
+---
+
+## Limitaciones actuales
+
+Detectar imágenes rotas no es trivial.
+
+Algunas imágenes visualmente dañadas pueden abrirse correctamente y no tener errores estructurales. En esos casos, el programa necesita inferir si la imagen está realmente rota o si solo tiene elementos visuales normales como fondos, luces, carteles o telas.
+
+Por eso, el proyecto prioriza evitar falsos positivos.
+
+Esto significa que algunas imágenes sospechosas pueden requerir revisión manual.
+
+---
+
+## Próximos pasos posibles
+
+Algunas mejoras posibles:
+
+* mejorar el sistema de scoring visual;
+* separar mejor `Unusable` de `Review`;
+* agregar una vista opcional para revisar casos dudosos;
+* guardar métricas internas en el reporte;
+* permitir configurar sensibilidad desde la interfaz;
+* entrenar o usar un modelo específico con ejemplos reales de imágenes buenas y rotas;
+* mejorar la interfaz visual;
+* agregar empaquetado como `.exe` para Windows.
+
+---
+
+## Nota
+
+Esta herramienta es un apoyo para revisión local de imágenes.
+
+No reemplaza una revisión humana ni garantiza que todos los casos sean detectados correctamente.

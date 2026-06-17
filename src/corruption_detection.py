@@ -10,18 +10,14 @@ from src.settings import (
     DAMAGED_BLOCK_MIN_COLOR_JUMP_RATIO,
     DAMAGED_BLOCK_MIN_RATIO,
     DAMAGED_BLOCK_MIN_SATURATED_RATIO,
-    DAMAGED_BLOCKS_SCORE,
     EXTREME_NOISE_COLOR_JUMP_THRESHOLD,
     EXTREME_NOISE_MIN_BRIGHTNESS,
     EXTREME_NOISE_MIN_COLOR_JUMP_RATIO,
     EXTREME_NOISE_MIN_SATURATED_RATIO,
     EXTREME_NOISE_MIN_SATURATION,
-    EXTREME_NOISE_SCORE,
     GLOBAL_SEAM_EDGE_IGNORE_RATIO,
     GLOBAL_SEAM_MIN_DIFFERENCE,
     GLOBAL_SEAM_OUTLIER_MULTIPLIER,
-    GLOBAL_SEAM_SCORE,
-    PANEL_DAMAGE_SCORE,
     PANEL_MIN_CONTEXT_DIFFERENCE,
     PANEL_MIN_SATURATED_RATIO,
     PANEL_MIN_SEAM_DIFFERENCE,
@@ -29,9 +25,8 @@ from src.settings import (
     SOLID_EDGE_MAX_GRAY_VARIANCE,
     SOLID_EDGE_MIN_CONTEXT_DIFFERENCE,
     SOLID_EDGE_MIN_DOMINANT_RATIO,
-    SOLID_EDGE_REPLACEMENT_SCORE,
+    SOLID_EDGE_MIN_SATURATED_RATIO,
     SOLID_EDGE_RATIO,
-    UNUSABLE_SCORE_THRESHOLD,
 )
 
 
@@ -53,24 +48,31 @@ def detect_visual_corruption(image: Image.Image) -> CorruptionDetectionResult:
     cv_image = pil_to_cv_rgb(image)
     cv_image = resize_for_analysis(cv_image)
 
-    signals: list[DetectionSignal] = []
-    signals.extend(detect_extreme_rgb_noise(cv_image))
-    signals.extend(detect_solid_edge_replacement(cv_image))
-    signals.extend(detect_large_panel_damage(cv_image))
-    signals.extend(detect_global_seams(cv_image))
-    signals.extend(detect_damaged_block_mosaic(cv_image))
+    result = CorruptionDetectionResult()
 
-    total_score = sum(signal.score for signal in signals)
-    reasons = [signal.reason for signal in signals]
+    critical_reasons: list[str] = []
+    warning_reasons: list[str] = []
 
-    result = CorruptionDetectionResult(score=total_score)
+    # Critical: only extremely strong global corruption.
+    critical_reasons.extend(detect_extreme_rgb_noise(cv_image))
 
-    if total_score >= UNUSABLE_SCORE_THRESHOLD:
-        result.critical_reasons = remove_duplicate_strings(reasons)
-    else:
-        result.warning_reasons = remove_duplicate_strings(reasons)
+    # Edge replacement is risky because valid photos can have banners,
+    # screens, dark borders, walls, curtains, or signs.
+    # Keep it as review only.
+    warning_reasons.extend(detect_solid_edge_replacement(cv_image))
 
-    result.metrics["visual_corruption_score"] = total_score
+    # These are useful signals, but they are not safe enough to mark
+    # people images as unusable automatically.
+    warning_reasons.extend(detect_large_panel_damage(cv_image))
+    warning_reasons.extend(detect_global_seams(cv_image))
+    warning_reasons.extend(detect_damaged_block_mosaic(cv_image))
+
+    result.critical_reasons = remove_duplicate_strings(critical_reasons)
+    result.warning_reasons = remove_duplicate_strings(warning_reasons)
+
+    result.score = float(len(result.critical_reasons))
+    result.metrics["visual_critical_count"] = float(len(result.critical_reasons))
+    result.metrics["visual_warning_count"] = float(len(result.warning_reasons))
 
     return result
 
@@ -94,44 +96,37 @@ def resize_for_analysis(image: np.ndarray) -> np.ndarray:
     return cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_AREA)
 
 
-def detect_extreme_rgb_noise(image: np.ndarray) -> list[DetectionSignal]:
-    hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
-
-    saturation = hsv[:, :, 1]
-    brightness = hsv[:, :, 2]
-
-    saturated_mask = (
-        (saturation >= EXTREME_NOISE_MIN_SATURATION)
-        & (brightness >= EXTREME_NOISE_MIN_BRIGHTNESS)
+def detect_extreme_rgb_noise(image: np.ndarray) -> list[str]:
+    saturated_ratio = calculate_saturated_ratio(
+        image,
+        min_saturation=EXTREME_NOISE_MIN_SATURATION,
+        min_brightness=EXTREME_NOISE_MIN_BRIGHTNESS,
     )
-
-    saturated_ratio = float(np.mean(saturated_mask))
     color_jump_ratio = calculate_color_jump_ratio(
         image,
         threshold=EXTREME_NOISE_COLOR_JUMP_THRESHOLD,
     )
 
-    if (
+    is_extreme_noise = (
         saturated_ratio >= EXTREME_NOISE_MIN_SATURATED_RATIO
         and color_jump_ratio >= EXTREME_NOISE_MIN_COLOR_JUMP_RATIO
-    ):
-        return [
-            DetectionSignal(
-                score=EXTREME_NOISE_SCORE,
-                reason=(
-                    "Unusable image: extreme RGB noise detected "
-                    f"(saturation {saturated_ratio:.0%}, color jumps {color_jump_ratio:.0%})"
-                ),
-            )
-        ]
+    )
 
-    return []
+    if not is_extreme_noise:
+        return []
+
+    return [
+        (
+            "Unusable image: extreme global RGB noise detected "
+            f"(saturation {saturated_ratio:.0%}, color jumps {color_jump_ratio:.0%})"
+        )
+    ]
 
 
-def detect_solid_edge_replacement(image: np.ndarray) -> list[DetectionSignal]:
+def detect_solid_edge_replacement(image: np.ndarray) -> list[str]:
     height, width = image.shape[:2]
 
-    if width < 20 or height < 20:
+    if width < 30 or height < 30:
         return []
 
     band_height = max(1, int(height * SOLID_EDGE_RATIO))
@@ -160,7 +155,7 @@ def detect_solid_edge_replacement(image: np.ndarray) -> list[DetectionSignal]:
         ),
     ]
 
-    signals: list[DetectionSignal] = []
+    reasons: list[str] = []
 
     for label, region, context in candidates:
         if region.size == 0 or context.size == 0:
@@ -169,28 +164,29 @@ def detect_solid_edge_replacement(image: np.ndarray) -> list[DetectionSignal]:
         dominant_ratio = calculate_dominant_color_ratio(region)
         gray_variance = calculate_gray_variance(region)
         context_difference = calculate_mean_color_difference(region, context)
+        saturated_ratio = calculate_saturated_ratio(
+            region,
+            min_saturation=EXTREME_NOISE_MIN_SATURATION,
+            min_brightness=EXTREME_NOISE_MIN_BRIGHTNESS,
+        )
 
         is_solid_replacement = (
             dominant_ratio >= SOLID_EDGE_MIN_DOMINANT_RATIO
             and gray_variance <= SOLID_EDGE_MAX_GRAY_VARIANCE
             and context_difference >= SOLID_EDGE_MIN_CONTEXT_DIFFERENCE
+            and saturated_ratio >= SOLID_EDGE_MIN_SATURATED_RATIO
         )
 
         if is_solid_replacement:
-            signals.append(
-                DetectionSignal(
-                    score=SOLID_EDGE_REPLACEMENT_SCORE,
-                    reason=(
-                        "Unusable image: large solid edge replacement detected "
-                        f"on {label} edge"
-                    ),
-                )
+            reasons.append(
+                "Review only: possible artificial solid edge replacement "
+                f"on {label} edge"
             )
 
-    return signals
+    return reasons
 
 
-def detect_large_panel_damage(image: np.ndarray) -> list[DetectionSignal]:
+def detect_large_panel_damage(image: np.ndarray) -> list[str]:
     height, width = image.shape[:2]
 
     if width < 30 or height < 30:
@@ -224,7 +220,7 @@ def detect_large_panel_damage(image: np.ndarray) -> list[DetectionSignal]:
         ),
     ]
 
-    signals: list[DetectionSignal] = []
+    reasons: list[str] = []
 
     for label, panel, adjacent in candidates:
         if panel.size == 0 or adjacent.size == 0 or center.size == 0:
@@ -232,7 +228,11 @@ def detect_large_panel_damage(image: np.ndarray) -> list[DetectionSignal]:
 
         context_difference = calculate_mean_color_difference(panel, center)
         seam_difference = calculate_mean_color_difference(panel, adjacent)
-        saturated_ratio = calculate_saturated_ratio(panel)
+        saturated_ratio = calculate_saturated_ratio(
+            panel,
+            min_saturation=EXTREME_NOISE_MIN_SATURATION,
+            min_brightness=EXTREME_NOISE_MIN_BRIGHTNESS,
+        )
 
         is_panel_damage = (
             context_difference >= PANEL_MIN_CONTEXT_DIFFERENCE
@@ -241,52 +241,37 @@ def detect_large_panel_damage(image: np.ndarray) -> list[DetectionSignal]:
         )
 
         if is_panel_damage:
-            signals.append(
-                DetectionSignal(
-                    score=PANEL_DAMAGE_SCORE,
-                    reason=(
-                        "Possible unusable image: large damaged panel detected "
-                        f"on {label} side"
-                    ),
-                )
+            reasons.append(
+                "Review only: possible damaged panel detected "
+                f"on {label} side"
             )
 
-    return signals
+    return reasons
 
 
-def detect_global_seams(image: np.ndarray) -> list[DetectionSignal]:
-    signals: list[DetectionSignal] = []
+def detect_global_seams(image: np.ndarray) -> list[str]:
+    reasons: list[str] = []
 
     vertical_seam = detect_axis_seam(image, axis="vertical")
     horizontal_seam = detect_axis_seam(image, axis="horizontal")
 
     if vertical_seam is not None:
         position_ratio, seam_score, baseline = vertical_seam
-        signals.append(
-            DetectionSignal(
-                score=GLOBAL_SEAM_SCORE,
-                reason=(
-                    "Possible unusable image: strong vertical split detected "
-                    f"at {position_ratio:.0%} of width "
-                    f"(score {seam_score:.1f}, baseline {baseline:.1f})"
-                ),
-            )
+        reasons.append(
+            "Review only: possible vertical split detected "
+            f"at {position_ratio:.0%} of width "
+            f"(score {seam_score:.1f}, baseline {baseline:.1f})"
         )
 
     if horizontal_seam is not None:
         position_ratio, seam_score, baseline = horizontal_seam
-        signals.append(
-            DetectionSignal(
-                score=GLOBAL_SEAM_SCORE,
-                reason=(
-                    "Possible unusable image: strong horizontal split detected "
-                    f"at {position_ratio:.0%} of height "
-                    f"(score {seam_score:.1f}, baseline {baseline:.1f})"
-                ),
-            )
+        reasons.append(
+            "Review only: possible horizontal split detected "
+            f"at {position_ratio:.0%} of height "
+            f"(score {seam_score:.1f}, baseline {baseline:.1f})"
         )
 
-    return signals
+    return reasons
 
 
 def detect_axis_seam(
@@ -295,24 +280,20 @@ def detect_axis_seam(
 ) -> tuple[float, float, float] | None:
     height, width = image.shape[:2]
 
-    if width < 20 or height < 20:
+    if width < 30 or height < 30:
         return None
+
+    image_float = image.astype(np.float32)
 
     if axis == "vertical":
         diffs = np.mean(
-            np.linalg.norm(
-                image[:, 1:, :].astype(np.float32) - image[:, :-1, :].astype(np.float32),
-                axis=2,
-            ),
+            np.linalg.norm(image_float[:, 1:, :] - image_float[:, :-1, :], axis=2),
             axis=0,
         )
         length = width
     else:
         diffs = np.mean(
-            np.linalg.norm(
-                image[1:, :, :].astype(np.float32) - image[:-1, :, :].astype(np.float32),
-                axis=2,
-            ),
+            np.linalg.norm(image_float[1:, :, :] - image_float[:-1, :, :], axis=2),
             axis=1,
         )
         length = height
@@ -343,7 +324,7 @@ def detect_axis_seam(
     return None
 
 
-def detect_damaged_block_mosaic(image: np.ndarray) -> list[DetectionSignal]:
+def detect_damaged_block_mosaic(image: np.ndarray) -> list[str]:
     blocks = split_into_grid(image, DAMAGED_BLOCK_GRID_SIZE)
 
     if not blocks:
@@ -352,7 +333,11 @@ def detect_damaged_block_mosaic(image: np.ndarray) -> list[DetectionSignal]:
     damaged_blocks = 0
 
     for block in blocks:
-        saturated_ratio = calculate_saturated_ratio(block)
+        saturated_ratio = calculate_saturated_ratio(
+            block,
+            min_saturation=EXTREME_NOISE_MIN_SATURATION,
+            min_brightness=EXTREME_NOISE_MIN_BRIGHTNESS,
+        )
         color_jump_ratio = calculate_color_jump_ratio(
             block,
             threshold=EXTREME_NOISE_COLOR_JUMP_THRESHOLD,
@@ -368,13 +353,8 @@ def detect_damaged_block_mosaic(image: np.ndarray) -> list[DetectionSignal]:
 
     if damaged_ratio >= DAMAGED_BLOCK_MIN_RATIO:
         return [
-            DetectionSignal(
-                score=DAMAGED_BLOCKS_SCORE,
-                reason=(
-                    "Possible unusable image: damaged RGB block mosaic detected "
-                    f"({damaged_ratio:.0%} damaged blocks)"
-                ),
-            )
+            "Review only: possible RGB block mosaic detected "
+            f"({damaged_ratio:.0%} damaged blocks)"
         ]
 
     return []
@@ -386,8 +366,14 @@ def calculate_color_jump_ratio(image: np.ndarray, threshold: int) -> float:
 
     image_float = image.astype(np.float32)
 
-    horizontal_diff = np.linalg.norm(image_float[:, 1:, :] - image_float[:, :-1, :], axis=2)
-    vertical_diff = np.linalg.norm(image_float[1:, :, :] - image_float[:-1, :, :], axis=2)
+    horizontal_diff = np.linalg.norm(
+        image_float[:, 1:, :] - image_float[:, :-1, :],
+        axis=2,
+    )
+    vertical_diff = np.linalg.norm(
+        image_float[1:, :, :] - image_float[:-1, :, :],
+        axis=2,
+    )
 
     horizontal_jumps = np.mean(horizontal_diff >= threshold)
     vertical_jumps = np.mean(vertical_diff >= threshold)
@@ -395,7 +381,11 @@ def calculate_color_jump_ratio(image: np.ndarray, threshold: int) -> float:
     return float((horizontal_jumps + vertical_jumps) / 2)
 
 
-def calculate_saturated_ratio(image: np.ndarray) -> float:
+def calculate_saturated_ratio(
+    image: np.ndarray,
+    min_saturation: int,
+    min_brightness: int,
+) -> float:
     if image.size == 0:
         return 0.0
 
@@ -403,9 +393,7 @@ def calculate_saturated_ratio(image: np.ndarray) -> float:
     saturation = hsv[:, :, 1]
     brightness = hsv[:, :, 2]
 
-    mask = (saturation >= EXTREME_NOISE_MIN_SATURATION) & (
-        brightness >= EXTREME_NOISE_MIN_BRIGHTNESS
-    )
+    mask = (saturation >= min_saturation) & (brightness >= min_brightness)
 
     return float(np.mean(mask))
 
