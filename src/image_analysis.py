@@ -4,7 +4,7 @@ from typing import BinaryIO
 
 from PIL import Image, ImageFile, ImageFilter, ImageStat, UnidentifiedImageError
 
-from src.corruption_detection import analyze_visual_corruption, VisualIssue
+from src.ml_corruption_classifier import classify_image_with_ml
 from src.settings import (
     ALLOWED_EXTENSIONS,
     BLUR_THRESHOLD,
@@ -15,8 +15,6 @@ from src.settings import (
     MIN_FILE_SIZE_BYTES,
     MIN_HEIGHT,
     MIN_WIDTH,
-    SUSPECT_SCORE_THRESHOLD,
-    WARNING_SCORE_THRESHOLD,
 )
 
 
@@ -94,33 +92,20 @@ def analyze_image(path: Path) -> ImageAnalysisResult:
 
         verify_image_file(path)
 
-        (
-            width,
-            height,
-            image_format,
-            blur_score,
-            image,
-        ) = decode_image_file(path)
+        width, height, image_format, blur_score, image = decode_image_file(path)
 
         result.width = width
         result.height = height
         result.blur_score = blur_score
         result.metrics["image_format"] = image_format
 
+        add_structure_issues(result, structure_issue_codes)
         add_dimension_checks(result, width, height)
         add_blur_info(result, blur_score)
         add_format_extension_mismatch(result, path, image_format)
         add_suspicious_file_size_warning(result, path, width, height)
 
-        visual_result = analyze_visual_corruption(image)
-        result.metrics.update(visual_result.metrics)
-
-        add_visual_issues(result, visual_result.broken_issues, target="critical")
-        add_visual_issues(result, visual_result.warning_issues, target="warning")
-        add_visual_issues(result, visual_result.info_issues, target="info")
-
-        add_structure_issues(result, structure_issue_codes)
-        add_composite_issues(result)
+        add_ml_classification(result, image)
 
         finalize_result(result)
 
@@ -315,6 +300,28 @@ def validate_bmp_structure(file: BinaryIO, file_size: int) -> set[str]:
     return issue_codes
 
 
+def add_structure_issues(result: ImageAnalysisResult, issue_codes: set[str]) -> None:
+    messages = {
+        "invalid_jpeg_header": "Invalid JPEG header",
+        "jpeg_missing_eof": "JPEG is missing EOF marker FF D9. It may be truncated.",
+        "invalid_png_header": "Invalid PNG header",
+        "png_missing_iend": "PNG is missing IEND chunk. It may be incomplete.",
+        "invalid_webp_header": "Invalid WEBP header",
+        "webp_size_mismatch": "WEBP declared size is larger than actual file size.",
+        "invalid_bmp_header": "Invalid BMP header",
+        "bmp_size_mismatch": "BMP declared size is larger than actual file size.",
+        "structure_check_failed": "File structure could not be checked.",
+    }
+
+    for issue_code in sorted(issue_codes):
+        message = messages.get(issue_code, issue_code)
+
+        if issue_code.startswith("invalid_"):
+            add_critical(result, issue_code, message)
+        else:
+            add_warning(result, issue_code, message)
+
+
 def add_dimension_checks(result: ImageAnalysisResult, width: int, height: int) -> None:
     if width <= 0 or height <= 0:
         add_critical(result, "invalid_dimensions", "Invalid image dimensions")
@@ -325,9 +332,6 @@ def add_dimension_checks(result: ImageAnalysisResult, width: int, height: int) -
 
     aspect_ratio = max(width / height, height / width)
     result.metrics["aspect_ratio"] = round(aspect_ratio, 4)
-
-    if aspect_ratio >= 8.0:
-        add_warning(result, "extreme_aspect_ratio", f"Extreme aspect ratio: {aspect_ratio:.2f}")
 
 
 def add_blur_info(result: ImageAnalysisResult, blur_score: float) -> None:
@@ -391,97 +395,25 @@ def add_suspicious_file_size_warning(
         )
 
 
-def add_structure_issues(result: ImageAnalysisResult, issue_codes: set[str]) -> None:
-    messages = {
-        "invalid_jpeg_header": "Invalid JPEG header",
-        "jpeg_missing_eof": "JPEG is missing EOF marker FF D9. It may be truncated.",
-        "invalid_png_header": "Invalid PNG header",
-        "png_missing_iend": "PNG is missing IEND chunk. It may be incomplete.",
-        "invalid_webp_header": "Invalid WEBP header",
-        "webp_size_mismatch": "WEBP declared size is larger than actual file size.",
-        "invalid_bmp_header": "Invalid BMP header",
-        "bmp_size_mismatch": "BMP declared size is larger than actual file size.",
-        "structure_check_failed": "File structure could not be checked.",
-    }
+def add_ml_classification(result: ImageAnalysisResult, image: Image.Image) -> None:
+    ml_result = classify_image_with_ml(image)
 
-    for issue_code in sorted(issue_codes):
-        message = messages.get(issue_code, issue_code)
-        add_warning(result, issue_code, message)
+    result.metrics["ml_model_available"] = ml_result.model_available
+    result.metrics["ml_probability_broken"] = round(ml_result.probability_broken, 6)
 
+    if not ml_result.model_available:
+        add_info(result, "ml_model_missing", ml_result.reason)
+        return
 
-def add_visual_issues(
-    result: ImageAnalysisResult,
-    issues: list[VisualIssue],
-    target: str,
-) -> None:
-    for issue in issues:
-        if target == "critical":
-            add_critical(result, issue.code, issue.message)
-        elif target == "warning":
-            add_warning(result, issue.code, issue.message)
-        else:
-            add_info(result, issue.code, issue.message)
+    if ml_result.status == "broken":
+        add_critical(result, "ml_corruption_broken", ml_result.reason)
+        return
 
+    if ml_result.status == "suspect":
+        add_suspect(result, "ml_corruption_suspect", ml_result.reason)
+        return
 
-def add_composite_issues(result: ImageAnalysisResult) -> None:
-    issue_codes = set(result.issue_codes)
-
-    structure_truncation = issue_codes & {
-        "jpeg_missing_eof",
-        "png_missing_iend",
-        "webp_size_mismatch",
-        "bmp_size_mismatch",
-    }
-
-    visual_truncation = issue_codes & {
-        "possible_bottom_truncation",
-        "flat_edge_band",
-        "artificial_horizontal_bands",
-    }
-
-    if structure_truncation and visual_truncation:
-        add_critical(
-            result,
-            "composite_truncation_evidence",
-            "File structure and visual signals both suggest truncation or incomplete download.",
-        )
-
-    visual_corruption_signals = issue_codes & {
-        "severe_anomalous_pixels",
-        "artificial_horizontal_bands",
-        "artificial_vertical_bands",
-        "flat_edge_band",
-        "possible_bottom_truncation",
-        "color_channel_imbalance",
-    }
-
-    if len(visual_corruption_signals) >= 3:
-        add_suspect(
-            result,
-            "composite_visual_corruption",
-            "Several visual corruption signals were detected together.",
-        )
-
-    placeholder_signals = issue_codes & {
-        "very_low_information",
-        "possible_placeholder",
-        "dimensions_too_small",
-        "file_too_small",
-    }
-
-    if len(placeholder_signals) >= 2:
-        add_suspect(
-            result,
-            "composite_placeholder_evidence",
-            "Several signals suggest this may be a placeholder or low-information image.",
-        )
-
-    if result.score >= SUSPECT_SCORE_THRESHOLD and not result.critical_reasons and not result.suspect_reasons:
-        add_suspect(
-            result,
-            "score_based_suspect",
-            f"Image accumulated a high suspicious score: {result.score}.",
-        )
+    add_info(result, "ml_corruption_ok", ml_result.reason)
 
 
 def add_critical(result: ImageAnalysisResult, code: str, message: str) -> None:
@@ -515,15 +447,6 @@ def finalize_result(result: ImageAnalysisResult) -> None:
     result.warning_reasons = remove_duplicate_reasons(result.warning_reasons)
     result.info_reasons = remove_duplicate_reasons(result.info_reasons)
     result.issue_codes = remove_duplicate_reasons(result.issue_codes)
-
-    if (
-        result.score >= WARNING_SCORE_THRESHOLD
-        and not result.critical_reasons
-        and not result.suspect_reasons
-        and not result.warning_reasons
-        and result.info_reasons
-    ):
-        result.warning_reasons.append("Image has minor quality signals, but not enough evidence to reject.")
 
     result.status = result.severity
     result.is_problematic = bool(result.critical_reasons or result.suspect_reasons)

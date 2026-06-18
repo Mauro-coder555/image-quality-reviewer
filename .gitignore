@@ -35,6 +35,7 @@ desktop.ini
 reports/*.md
 reports/*.html
 reports/*.json
+reports/*.csv
 
 # Local trash files
 trash/*
@@ -42,3 +43,29 @@ trash/*
 # Keep folders in git
 !reports/.gitkeep
 !trash/.gitkeep
+
+# Training data
+training_data/ok/*
+training_data/broken/*
+
+# Keep training folders in git
+!training_data/ok/.gitkeep
+!training_data/broken/.gitkeep
+
+# Trained models and checkpoints
+models/*
+*.pt
+*.pth
+*.ckpt
+
+# Keep models folder in git
+!models/.gitkeep
+
+# Hugging Face / ML cache
+.cache/
+hf_cache/
+huggingface/
+datasets_cache/
+
+# PyTorch cache
+torch_cache/
