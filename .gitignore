@@ -1,71 +1,28 @@
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
+.pytest_cache/
 
-# Virtual environments
+# Entorno virtual
 .venv/
 venv/
-env/
 
-# Environment variables
-.env
-
-# Build and packaging
-build/
-dist/
-*.spec
-
-# PyInstaller
-*.manifest
-
-# IDEs and editors
+# IDE
 .vscode/
 .idea/
 
-# OS files
-.DS_Store
-Thumbs.db
-desktop.ini
+# Variables locales
+.env
 
-# Logs
+# Archivos procesados
+input/*
+output/*
+
+# Mantener las carpetas
+!input/.gitkeep
+!output/.gitkeep
+
+# Logs y reportes
 *.log
-
-# Local generated reports
-reports/*.md
-reports/*.html
-reports/*.json
-reports/*.csv
-
-# Local trash files
-trash/*
-
-# Keep folders in git
-!reports/.gitkeep
-!trash/.gitkeep
-
-# Training data
-training_data/ok/*
-training_data/broken/*
-
-# Keep training folders in git
-!training_data/ok/.gitkeep
-!training_data/broken/.gitkeep
-
-# Trained models and checkpoints
-models/*
-*.pt
-*.pth
-*.ckpt
-
-# Keep models folder in git
-!models/.gitkeep
-
-# Hugging Face / ML cache
-.cache/
-hf_cache/
-huggingface/
-datasets_cache/
-
-# PyTorch cache
-torch_cache/
+*.csv
+*.json
